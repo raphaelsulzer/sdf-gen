@@ -81,6 +81,7 @@ int main(int argc, char* argv[]) {
   int ignored_lines = 0;
   std::string line;
   std::vector<Vec3f> vertList;
+  std::vector<int> idList;
   std::vector<Vec3ui> faceList;
   while (!infile.eof()) {
     std::getline(infile, line);
@@ -89,9 +90,10 @@ int main(int argc, char* argv[]) {
     if (line.substr(0, 1) == std::string("v") && line.substr(0, 2) == std::string("v ")) {
       std::stringstream data(line);
       char c;
-      Vec3f point;
-      data >> c >> point[0] >> point[1] >> point[2];
+      Vec3f point, color;
+      data >> c >> point[0] >> point[1] >> point[2] >> color[0] >> color[1] >> color[2];
       vertList.push_back(point);
+      idList.push_back(int(color[0] * 255 + 0.5) + int(color[1] * 255 + 0.5) * 256 + int(color[2] * 255 + 0.5) * 256 * 256);
       update_minmax(point, min_box, max_box);
     } else if (line.substr(0, 1) == std::string("f")) {
       std::stringstream data(line);
@@ -129,7 +131,8 @@ int main(int argc, char* argv[]) {
 
   std::cout << "Computing signed distance field.\n";
   Array3f phi_grid;
-  make_level_set3(faceList, vertList, min_box, dx, sizes[0], sizes[1], sizes[2], phi_grid);
+  Array3f theta_grid;
+  make_level_set3(faceList, vertList, idList, min_box, dx, sizes[0], sizes[1], sizes[2], phi_grid, theta_grid);
 
   std::string outname;
 
@@ -168,8 +171,8 @@ int main(int argc, char* argv[]) {
 #else
   // if VTK support is missing, default back to the original ascii file-dump.
   // Very hackily strip off file suffix.
-  outname = filename.substr(0, filename.size() - 4) + std::string(".sdf");
-  std::cout << "Writing results to: " << outname << "\n";
+  outname = filename.substr(0, filename.size() - 4) + std::string(".df");
+  std::cout << "Writing df results to: " << outname << "\n";
 
   std::ofstream outfile(outname.c_str());
   outfile << phi_grid.ni << " " << phi_grid.nj << " " << phi_grid.nk << std::endl;
@@ -179,6 +182,19 @@ int main(int argc, char* argv[]) {
     outfile << phi_grid.a[i] << std::endl;
   }
   outfile.close();
+
+  outname = filename.substr(0, filename.size() - 4) + std::string(".if");
+  std::cout << "Writing if results to: " << outname << "\n";
+
+  std::ofstream outfile_if(outname.c_str());
+  outfile_if << theta_grid.ni << " " << theta_grid.nj << " " << theta_grid.nk << std::endl;
+  outfile_if << min_box[0] << " " << min_box[1] << " " << min_box[2] << std::endl;
+  outfile_if << dx << std::endl;
+  for (unsigned int i = 0; i < theta_grid.a.size(); ++i) {
+    outfile_if << theta_grid.a[i] << std::endl;
+  }
+  outfile_if.close();
+
 #endif
 
   std::cout << "Processing complete.\n";

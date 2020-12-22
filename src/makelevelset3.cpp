@@ -39,21 +39,40 @@ static float point_triangle_distance(const Vec3f &x0, const Vec3f &x1, const Vec
   }
 }
 
-static void check_neighbour(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x,
-                            Array3f &phi, Array3i &closest_tri, const Vec3f &gx, int i0, int j0,
+static float point_triangle_id(const Vec3f &x0, const Vec3f &x1, const Vec3f &x2,
+                                     const Vec3f &x3, const int &id1, const int &id2,
+                                     const int &id3) {
+
+  Vec3f x01(x0 - x1), x02(x0 - x2), x03(x0 - x3);
+  float d01 = dot(x01, x01);
+  float d02 = dot(x02, x02);
+  float d03 = dot(x03, x03);
+  if (d01 >= d02 && d01 >= d03)
+    return (float)id1;
+  if (d02 >= d01 && d02 >= d03)
+    return (float)id2;
+  if (d03 >= d02 && d03 >= d01)
+    return (float)id3;
+  return (float)id1;
+}
+
+static void check_neighbour(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x, const std::vector<int> &id,
+                            Array3f &phi, Array3f &theta, Array3i &closest_tri, const Vec3f &gx, int i0, int j0,
                             int k0, int i1, int j1, int k1) {
   if (closest_tri(i1, j1, k1) >= 0) {
     unsigned int p, q, r;
     assign(tri[closest_tri(i1, j1, k1)], p, q, r);
     float d = point_triangle_distance(gx, x[p], x[q], x[r]);
+    float cur_id = point_triangle_id(gx, x[p], x[q], x[r], id[p], id[q], id[r]);
     if (d < phi(i0, j0, k0)) {
       phi(i0, j0, k0) = d;
+      theta(i0, j0, k0) = cur_id;
       closest_tri(i0, j0, k0) = closest_tri(i1, j1, k1);
     }
   }
 }
 
-static void sweep(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x, Array3f &phi,
+static void sweep(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x, const std::vector<int> &id, Array3f &phi, Array3f &theta,
                   Array3i &closest_tri, const Vec3f &origin, float dx, int di, int dj, int dk) {
   int i0, i1;
   if (di > 0) {
@@ -83,13 +102,13 @@ static void sweep(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x, A
     for (int j = j0; j != j1; j += dj)
       for (int i = i0; i != i1; i += di) {
         Vec3f gx(i * dx + origin[0], j * dx + origin[1], k * dx + origin[2]);
-        check_neighbour(tri, x, phi, closest_tri, gx, i, j, k, i - di, j, k);
-        check_neighbour(tri, x, phi, closest_tri, gx, i, j, k, i, j - dj, k);
-        check_neighbour(tri, x, phi, closest_tri, gx, i, j, k, i - di, j - dj, k);
-        check_neighbour(tri, x, phi, closest_tri, gx, i, j, k, i, j, k - dk);
-        check_neighbour(tri, x, phi, closest_tri, gx, i, j, k, i - di, j, k - dk);
-        check_neighbour(tri, x, phi, closest_tri, gx, i, j, k, i, j - dj, k - dk);
-        check_neighbour(tri, x, phi, closest_tri, gx, i, j, k, i - di, j - dj, k - dk);
+        check_neighbour(tri, x, id, phi, theta, closest_tri, gx, i, j, k, i - di, j, k);
+        check_neighbour(tri, x, id, phi, theta, closest_tri, gx, i, j, k, i, j - dj, k);
+        check_neighbour(tri, x, id, phi, theta, closest_tri, gx, i, j, k, i - di, j - dj, k);
+        check_neighbour(tri, x, id, phi, theta, closest_tri, gx, i, j, k, i, j, k - dk);
+        check_neighbour(tri, x, id, phi, theta, closest_tri, gx, i, j, k, i - di, j, k - dk);
+        check_neighbour(tri, x, id, phi, theta, closest_tri, gx, i, j, k, i, j - dj, k - dk);
+        check_neighbour(tri, x, id, phi, theta, closest_tri, gx, i, j, k, i - di, j - dj, k - dk);
       }
 }
 
@@ -138,11 +157,13 @@ static bool point_in_triangle_2d(double x0, double y0, double x1, double y1, dou
   return true;
 }
 
-void make_level_set3(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x,
-                     const Vec3f &origin, float dx, int ni, int nj, int nk, Array3f &phi,
+void make_level_set3(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x, const std::vector<int> &id,
+                     const Vec3f &origin, float dx, int ni, int nj, int nk, Array3f &phi, Array3f &theta,
                      const int exact_band) {
   phi.resize(ni, nj, nk);
+  theta.resize(ni, nj, nk);
   phi.assign((ni + nj + nk) * dx);  // upper bound on distance
+  theta.assign(-1);  // invalid_id
   Array3i closest_tri(ni, nj, nk, -1);
   Array3i intersection_count(
       ni, nj, nk, 0);  // intersection_count(i,j,k) is # of tri intersections in (i-1,i]x{j}x{k}
@@ -170,8 +191,10 @@ void make_level_set3(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x
         for (int i = i0; i <= i1; ++i) {
           Vec3f gx(i * dx + origin[0], j * dx + origin[1], k * dx + origin[2]);
           float d = point_triangle_distance(gx, x[p], x[q], x[r]);
+          float cur_id = point_triangle_id(gx, x[p], x[q], x[r], id[p], id[q], id[r]);
           if (d < phi(i, j, k)) {
             phi(i, j, k) = d;
+            theta(i, j, k) = cur_id;
             closest_tri(i, j, k) = t;
           }
         }
@@ -198,14 +221,14 @@ void make_level_set3(const std::vector<Vec3ui> &tri, const std::vector<Vec3f> &x
   }
   // and now we fill in the rest of the distances with fast sweeping
   for (unsigned int pass = 0; pass < 2; ++pass) {
-    sweep(tri, x, phi, closest_tri, origin, dx, +1, +1, +1);
-    sweep(tri, x, phi, closest_tri, origin, dx, -1, -1, -1);
-    sweep(tri, x, phi, closest_tri, origin, dx, +1, +1, -1);
-    sweep(tri, x, phi, closest_tri, origin, dx, -1, -1, +1);
-    sweep(tri, x, phi, closest_tri, origin, dx, +1, -1, +1);
-    sweep(tri, x, phi, closest_tri, origin, dx, -1, +1, -1);
-    sweep(tri, x, phi, closest_tri, origin, dx, +1, -1, -1);
-    sweep(tri, x, phi, closest_tri, origin, dx, -1, +1, +1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, +1, +1, +1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, -1, -1, -1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, +1, +1, -1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, -1, -1, +1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, +1, -1, +1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, -1, +1, -1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, +1, -1, -1);
+    sweep(tri, x, id, phi, theta, closest_tri, origin, dx, -1, +1, +1);
   }
   // then figure out signs (inside/outside) from intersection counts
   for (int k = 0; k < nk; ++k)
