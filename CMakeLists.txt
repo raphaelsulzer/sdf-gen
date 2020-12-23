@@ -32,9 +32,10 @@ configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/src/config.h.in"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/config.h"
 )
-
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/cnpy")
+link_directories("${CMAKE_CURRENT_SOURCE_DIR}/cnpy/lib")
 add_executable(${PROJECT_NAME} src/main.cpp src/makelevelset3.cpp)
-
+target_link_libraries(${PROJECT_NAME} cnpy z)
 if(VTK_FOUND)
     include(${VTK_USE_FILE})
   target_link_libraries(${PROJECT_NAME} ${VTK_LIBRARIES})

@@ -5,6 +5,7 @@
 
 #include "config.h"
 #include "makelevelset3.h"
+#include"cnpy.h"
 
 #ifdef HAVE_VTK
 #include <vtkFloatArray.h>
@@ -20,7 +21,7 @@
 #include <sstream>
 
 int main(int argc, char* argv[]) {
-  if (argc != 4) {
+  if (argc != 5) {
     std::cout << "SDFGen - A utility for converting closed oriented triangle meshes into "
                  "grid-based signed distance fields.\n";
     std::cout << "\nThe output file format is:";
@@ -38,7 +39,7 @@ int main(int argc, char* argv[]) {
     std::cout << "The output filename will match that of the input, with the OBJ suffix replaced "
                  "with SDF.\n\n";
 
-    std::cout << "Usage: SDFGen <filename> <dx> <padding>\n\n";
+    std::cout << "Usage: SDFGen <filename> <outpath> <dx> <padding>\n\n";
     std::cout << "Where:\n";
     std::cout << "\t<filename> specifies a Wavefront OBJ (text) file representing a *triangle* "
                  "mesh (no quad or poly meshes allowed). File must use the suffix \".obj\".\n";
@@ -55,11 +56,13 @@ int main(int argc, char* argv[]) {
     exit(-1);
   }
 
-  std::stringstream arg2(argv[2]);
+  std::string output_path(argv[2]);
+
+  std::stringstream arg2(argv[3]);
   float dx;
   arg2 >> dx;
 
-  std::stringstream arg3(argv[3]);
+  std::stringstream arg3(argv[4]);
   int padding;
   arg3 >> padding;
 
@@ -171,29 +174,21 @@ int main(int argc, char* argv[]) {
 #else
   // if VTK support is missing, default back to the original ascii file-dump.
   // Very hackily strip off file suffix.
-  outname = filename.substr(0, filename.size() - 4) + std::string(".df");
+  outname = output_path + std::string(".npy");
   std::cout << "Writing df results to: " << outname << "\n";
-
-  std::ofstream outfile(outname.c_str());
-  outfile << phi_grid.ni << " " << phi_grid.nj << " " << phi_grid.nk << std::endl;
-  outfile << min_box[0] << " " << min_box[1] << " " << min_box[2] << std::endl;
-  outfile << dx << std::endl;
-  for (unsigned int i = 0; i < phi_grid.a.size(); ++i) {
-    outfile << phi_grid.a[i] << std::endl;
+  std::vector<float> phi_vector(phi_grid.a.size());
+  for (size_t i = 0; i < phi_grid.a.size(); i++) {
+    phi_vector[i] = phi_grid.a[i];
   }
-  outfile.close();
+  cnpy::npy_save(outname, &phi_vector[0], {(size_t)phi_grid.nk, (size_t)phi_grid.nj, (size_t)phi_grid.ni}, "w");
 
-  outname = filename.substr(0, filename.size() - 4) + std::string(".if");
+  outname = output_path + std::string("_if.npy");
   std::cout << "Writing if results to: " << outname << "\n";
-
-  std::ofstream outfile_if(outname.c_str());
-  outfile_if << theta_grid.ni << " " << theta_grid.nj << " " << theta_grid.nk << std::endl;
-  outfile_if << min_box[0] << " " << min_box[1] << " " << min_box[2] << std::endl;
-  outfile_if << dx << std::endl;
-  for (unsigned int i = 0; i < theta_grid.a.size(); ++i) {
-    outfile_if << theta_grid.a[i] << std::endl;
+  std::vector<float> theta_vector(theta_grid.a.size());
+  for (size_t i = 0; i < theta_grid.a.size(); i++) {
+    theta_vector[i] = theta_grid.a[i];
   }
-  outfile_if.close();
+  cnpy::npy_save(outname, &theta_vector[0], {(size_t)theta_grid.nk, (size_t)theta_grid.nj, (size_t)theta_grid.ni}, "w");
 
 #endif
 
