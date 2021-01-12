@@ -23,22 +23,23 @@ sdf_gen_highres_cmd = lambda in_filepath, out_filepath: f"bin/sdf_gen {in_filepa
 sdf_gen_lowres_cmd = lambda in_filepath, out_filepath: f"bin/sdf_gen {in_filepath} {out_filepath} {lowres_voxel_size} {padding_lowres}"
 
 
-def get_valid_rooms(mesh_dir, limit=None):
+def get_valid_objects(mesh_dir, limit=None):
     list_of_scenes = Path(mesh_dir).iterdir()
-    list_of_rooms = []
+    list_of_objects = []
     for scene in list_of_scenes:
         for room in scene.iterdir():
-            if (room / "mesh.obj").exists():
-                list_of_rooms.append(room)
-    return list_of_rooms[:limit]
+            objects = [Path(str(x).split(".")[0]) for x in room.iterdir() if x.name.endswith(".obj") and x.name != "mesh.obj"]
+            list_of_objects.extend(objects)
+    return list_of_objects[:limit]
 
 
-def export_distance_field(mesh_dir, output_path_lowres, output_path_highres, output_path_if, visualize=False):
+
+def export_distance_field(object_path, output_path_lowres, output_path_highres, output_path_if, visualize=False):
     output_path_lowres.parents[0].mkdir(exist_ok=True, parents=True)
     output_path_highres.parents[0].mkdir(exist_ok=True, parents=True)
-    failure_lr = subprocess.call(sdf_gen_lowres_cmd(str(mesh_dir / "mesh.obj"), str(output_path_lowres)), shell=True)
+    failure_lr = subprocess.call(sdf_gen_lowres_cmd(str(object_path)+".obj", str(output_path_lowres)), shell=True)
     os.remove(str(output_path_lowres) + "_if.npy")
-    failure_hr = subprocess.call(sdf_gen_highres_cmd(str(mesh_dir / "mesh.obj"), str(output_path_highres)), shell=True)
+    failure_hr = subprocess.call(sdf_gen_highres_cmd(str(object_path)+".obj", str(output_path_highres)), shell=True)
     os.rename(str(output_path_highres) + "_if.npy", str(output_path_if) + ".npy")
     if visualize:
         visualize_highres(output_path_highres)
@@ -76,13 +77,27 @@ def chunk_scene(df_path_lowres, df_path_highres, df_path_if, output_chunk_dir_lo
     df_lowres = np.load(str(df_path_lowres)+".npy")
     ratio = highres_dim / lowres_dim
     new_shape_highres = (np.ceil(np.array(df_highres.shape) / highres_dim) * highres_dim).astype(np.int32)
-    new_shape_lowres = (np.array(new_shape_highres) / ratio).astype(np.uint)
+    new_shape_lowres = (np.array(new_shape_highres) / ratio).astype(np.int32)
+
+    if not (new_shape_highres[0] <= highres_dim and new_shape_highres[1] <= highres_dim and new_shape_highres[2] <= highres_dim):
+        return
+
+    bound_hr_x = round((highres_dim - df_highres.shape[0]) / 2)
+    bound_hr_y = round((highres_dim - df_highres.shape[1]) / 2)
+    bound_hr_z = round((highres_dim - df_highres.shape[2]) / 2)
+    bound_lr_x = round((highres_dim - df_highres.shape[0]) / 2 / ratio)
+    bound_lr_y = round((highres_dim - df_highres.shape[1]) / 2 / ratio)
+    bound_lr_z = round((highres_dim - df_highres.shape[2]) / 2 / ratio)
+    
+    # print(f"{df_highres.shape} -> {bound_hr_x}:{bound_hr_x + df_highres.shape[0]},{bound_hr_y}:{bound_hr_y + df_highres.shape[1]},{bound_hr_z}:{bound_hr_z + df_highres.shape[2]}")
+    # print(f"{df_lowres.shape} -> {bound_lr_x}:{bound_lr_x + df_lowres.shape[0]},{bound_lr_y}:{bound_lr_y + df_lowres.shape[1]},{bound_lr_z}:{bound_lr_z + df_lowres.shape[2]}")
+
     df_highres_padded = np.ones(new_shape_highres) * df_highres.max()
     if_highres_padded = np.zeros(new_shape_highres)
     df_lowres_padded = np.ones(new_shape_lowres) * df_lowres.max()
-    df_highres_padded[:df_highres.shape[0],:df_highres.shape[1], :df_highres.shape[2]] = df_highres
-    if_highres_padded[:if_highres.shape[0],:if_highres.shape[1], :if_highres.shape[2]] = if_highres
-    df_lowres_padded[:df_lowres.shape[0],:df_lowres.shape[1], :df_lowres.shape[2]] = df_lowres
+    df_highres_padded[bound_hr_x:bound_hr_x + df_highres.shape[0],bound_hr_y:bound_hr_y + df_highres.shape[1], bound_hr_z:bound_hr_z + df_highres.shape[2]] = df_highres
+    if_highres_padded[bound_hr_x:bound_hr_x + if_highres.shape[0],bound_hr_y:bound_hr_y + if_highres.shape[1], bound_hr_z:bound_hr_z + if_highres.shape[2]] = if_highres
+    df_lowres_padded[bound_lr_x:bound_lr_x + df_lowres.shape[0],bound_lr_y:bound_lr_y + df_lowres.shape[1], bound_lr_z:bound_lr_z + df_lowres.shape[2]] = df_lowres
     stride_highres = int(new_shape_highres[1])
     stride_lowres = int(new_shape_lowres[1])
     for i in range(new_shape_highres[0] // stride_highres):
@@ -104,7 +119,6 @@ def chunk_scene(df_path_lowres, df_path_highres, df_path_if, output_chunk_dir_lo
                 visualize_lowres(output_chunk_dir_lowres / filename)
 
 
-
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument("--mesh_dir", type=str, default='outputs')
@@ -118,14 +132,14 @@ if __name__ == '__main__':
     parser.add_argument('--proc', default=0, type=int)
 
     args = parser.parse_args()
-    valid_rooms = get_valid_rooms(args.mesh_dir)
-    valid_rooms = [x for i, x in enumerate(valid_rooms) if i % args.num_proc == args.proc]
+    valid_objects = get_valid_objects(args.mesh_dir)
+    valid_objects = [x for i, x in enumerate(valid_objects) if i % args.num_proc == args.proc]
     
     for p in [args.df_highres_dir, args.df_lowres_dir, args.chunk_highres_dir, args.chunk_lowres_dir, args.df_if_dir, args.chunk_if_dir]:
         Path(p).mkdir(exist_ok=True, parents=True)
     
-    for room in tqdm(valid_rooms):
-        room_id = f"{room.parents[0].name}__{room.name}"
-        print("Processing: ", room_id)
-        export_distance_field(room, Path(args.df_lowres_dir) / f"{room_id}", Path(args.df_highres_dir) / f"{room_id}", Path(args.df_if_dir) / f"{room_id}", visualize=False)
-        chunk_scene(Path(args.df_lowres_dir) / f"{room_id}", Path(args.df_highres_dir) / f"{room_id}", Path(args.df_if_dir) / f"{room_id}", Path(args.chunk_lowres_dir), Path(args.chunk_highres_dir), Path(args.chunk_if_dir), visualize=False)
+    for _object in tqdm(valid_objects):
+        object_id = f"{_object.parents[1].name}__{_object.parents[0].name}__{_object.name}"
+        print("Processing: ", _object)
+        export_distance_field(_object, Path(args.df_lowres_dir) / f"{object_id}", Path(args.df_highres_dir) / f"{object_id}", Path(args.df_if_dir) / f"{object_id}", visualize=False)
+        chunk_scene(Path(args.df_lowres_dir) / f"{object_id}", Path(args.df_highres_dir) / f"{object_id}", Path(args.df_if_dir) / f"{object_id}", Path(args.chunk_lowres_dir), Path(args.chunk_highres_dir), Path(args.chunk_if_dir), visualize=False)
