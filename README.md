@@ -1,5 +1,40 @@
 # SDFGen
 
+### Building
+
+To build sdfgen executables, run
+
+```
+mkdir build
+cd build
+cmake ..
+make
+cd ..
+cp -r build/bin .
+```
+
+Processing ShapeNetv2 meshes:
+
+```
+python process_meshes_shapenet.py --mesh_dir <dir containing shapenet meshes> --df_lowres_dir <output lowres DF> --df_highres_dir <output highres DF>
+```
+
+Processing 3DFront meshes:
+```
+python process_meshes.py --mesh_dir <dir containing 3DFront meshes> --df_lowres_dir <output lowres DF> --df_highres_dir <output highres DF> --df_if_dir <output semantics field> --chunk_lowres_dir <output lowres chunk df> --chunk_highres_dir <output highres chunk df> --chunk_if_dir <output semantics chunks>
+```
+
+
+Processing Matterport meshes:
+
+```
+python process_meshes_matterport.py --mesh_dir <dir containing matterport meshes> --df_lowres_dir <output lowres DF> --df_highres_dir <output highres DF> --chunk_lowres_dir <output chunks lowres> --chunk_highres_dir <output chunks highres>
+```
+
+---
+### Original ReadMe
+---
+
 A utility for converting closed oriented triangle meshes into grid-based signed distance fields.
 
 The output file format is:
