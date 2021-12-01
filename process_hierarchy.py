@@ -60,6 +60,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     files = sorted([x for x in Path(args.input_folder).iterdir()])
-    files = [x for i, x in enumerate(files) if  i % args.num_proc == args.proc]
-    for f in files:
+    files = [x for i, x in enumerate(files) if i % args.num_proc == args.proc]
+    for f in tqdm(files):
         export_distance_field(f / "model_normalized.obj", True)
