@@ -95,7 +95,10 @@ def export_distance_field(mesh_dir, output_path_lowres, output_path_highres, vis
 def get_valid_objects(limit=None):
     splitsdir = Path("../Repatch3D/data/splits/ShapeNetV2/official")
     all_items = []
-    for split in ["train.txt", "val.txt"]:
+
+
+
+    for split in ["train.lst", "test.lst"]:
         all_items.extend((splitsdir/split).read_text().splitlines())
     return sorted(all_items[:limit])
 
